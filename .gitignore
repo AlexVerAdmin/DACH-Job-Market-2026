@@ -1,0 +1,44 @@
+# ==========================================
+# Python Environment
+# ==========================================
+.venv/
+env/
+venv/
+.env
+
+# ==========================================
+# Data and Analysis Results (Ignored from GitHub)
+# ==========================================
+data/
+exports/
+reports/
+*.sqlite
+*.db
+*.csv
+*.xlsx
+*.json
+
+# ==========================================
+# Project Dashboard (Excluded by request)
+# ==========================================
+dashboard/
+
+# ==========================================
+# Temporary, Tests and Cache
+# ==========================================
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+*.html
+*.txt
+*.log
+test_*/
+temp_*/
+
+# ==========================================
+# Personal and Sensitive Text
+# ==========================================
+Заметки.md
+ROADMAP.md
+logs/
