@@ -40,12 +40,22 @@ class StepStoneScraper:
                     id_match = re.search(r"-(\d+)\.html", job_url)
                     job_id = id_match.group(1) if id_match else str(hash(job_url))
                     
-                    company_elem = item.find("a", href=re.compile(r"/cmp/"))
+                    company_elem = item.find("a", href=re.compile(r"/cmp/")) or \
+                                   item.find("div", {"data-test": "job-item-company-name"})
                     company = company_elem.get_text(strip=True) if company_elem else "Unknown"
                     
-                    location_elem = item.find("span", {"data-test": "job-item-location"})
+                    location_elem = item.find("span", {"data-test": "job-item-location"}) or \
+                                    item.find("div", {"data-test": "job-item-location"})
                     location = location_elem.get_text(strip=True) if location_elem else ("Germany" if country=="DE" else country)
                     
+                    # Если компания Unknown, попробуем вытащить из URL
+                    if company == "Unknown" and "--" in job_url:
+                        # URL format: ...--Title-Location-Company--ID-inline.html
+                        url_parts = job_url.split("--")[1].split("-")
+                        if len(url_parts) > 2:
+                            # Usually the last few parts before the ID
+                            company = " ".join(url_parts[-3:-1]).replace("-", " ").title()
+
                     all_jobs.append({
                         "id": job_id,
                         "title": title_elem.get_text(strip=True),

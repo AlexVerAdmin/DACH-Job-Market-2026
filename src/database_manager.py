@@ -31,9 +31,17 @@ class DatabaseManager:
                     search_level TEXT,
                     first_seen TEXT,
                     last_seen TEXT,
-                    source TEXT
+                    source TEXT,
+                    translated_title TEXT
                 )
             ''')
+            
+            # Check if translated_title column exists (for existing DBs)
+            cursor.execute("PRAGMA table_info(vacancies)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if 'translated_title' not in columns:
+                cursor.execute("ALTER TABLE vacancies ADD COLUMN translated_title TEXT")
+            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS salary_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

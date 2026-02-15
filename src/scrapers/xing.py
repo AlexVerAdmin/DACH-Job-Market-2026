@@ -47,13 +47,39 @@ class XingScraper:
                     title_elem = container.find(['h2', 'h3'])
                     title = title_elem.get_text(strip=True) if title_elem else link.get_text(strip=True).split("|")[0]
                     
-                    # Продвинутый парсинг компании/локации из текста
-                    parts = [p.strip() for p in full_text.split("|") if p.strip()]
-                    company = parts[1] if len(parts) > 1 else "Unknown"
-                    location = parts[2] if len(parts) > 2 else "Germany"
+                    # Пытаемся найти компанию в специальных элементах или тексте
+                    company = "Unknown"
+                    company_elem = container.find('p', class_=re.compile(r'CompanyLine')) or \
+                                   container.find('span', class_=re.compile(r'CompanyName'))
+                    
+                    if company_elem:
+                        company = company_elem.get_text(strip=True)
+                    else:
+                        # Fallback: парсим из full_text, пропуская заголовок
+                        parts = [p.strip() for p in full_text.split("|") if p.strip()]
+                        # Обычно: [Заголовок, Компания, Локация, ...]
+                        if len(parts) > 1:
+                            if parts[0] == title and len(parts) > 2:
+                                company = parts[1]
+                                location = parts[2]
+                            else:
+                                company = parts[1]
+                    
+                    # Локация
+                    location = "Germany"
+                    loc_elem = container.find('p', class_=re.compile(r'LocationLine')) or \
+                               container.find('span', class_=re.compile(r'LocationName'))
+                    if loc_elem:
+                        location = loc_elem.get_text(strip=True)
+                    elif len(parts) > 2 and company != parts[2]:
+                        location = parts[2]
 
-                    salary_match = re.search(r'(\d+[\.\s]?\d+)\s?€\s?–?\s?(\d+[\.\s]?\d+)?\s?€?', full_text)
-                    salary_min, salary_max = self._parse_salary(salary_match.group(0) if salary_match else "")
+                    # Очистка локации от лишнего текста (типа "• Hybrid")
+                    location = location.split("•")[0].strip()
+                    
+                    # Пытаемся найти зарплату в тексте
+                    salary_text = re.search(r'(\d[\d\.\s]*€|\d[\d\.\s]*\s*Euro|от\s*[\d\.\s]+)', full_text, re.I)
+                    salary_min, salary_max = self._parse_salary(salary_text.group(0) if salary_text else "")
                     
                     url = link['href']
                     if url.startswith('/'): url = "https://www.xing.com" + url

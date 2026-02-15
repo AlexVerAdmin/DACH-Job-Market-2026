@@ -6,19 +6,22 @@ def clean_text(text):
         return ""
     # Приводим к нижнему регистру
     text = str(text).lower()
+    
     # Удаляем (m/w/d), (f/m/d), (gn) и прочие гендерные приписки
-    text = re.sub(r'[\(\[/]*(m/w/d|f/m/d|w/m/d|m/f/d|gn|m/w/x|x/m/w)[\)\]/]*', '', text)
+    text = re.sub(r'[\(\[/]*(m/w/d|f/m/d|w/m/d|m/f/d|gn|m/w/x|x/m/w|d/m/w|w/m/x)[\)\]/]*', '', text)
     
     # Удаляем правовые формы компаний (GmbH, AG, SE и т.д.)
-    text = re.sub(r'\b(gmbh|ag|se|kg|limited|ltd|inc|llc|gbr|co\.? kg|kgaa)\b', '', text)
+    text = re.sub(r'\b(gmbh|ag|se|kg|limited|ltd|inc|llc|gbr|co\.? kg|kgaa|mbh)\b', '', text)
     
-    # Очищаем от спецсимволов и лишних пробелов, но оставляем буквы и цифры
+    # Очищаем от ключевых слов "remote", "hybrid" и т.д. для более чистого сравнения
+    text = re.sub(r'\b(remote|hybrid|homeoffice|home office|100%|on-site|onsite|work from home)\b', '', text)
+
+    # Очищаем от спецсимволов и лишних пробелов
     text = re.sub(r'[^a-z0-9а-яё ]', ' ', text)
-    text = " ".join(text.split())
-    return text.strip()
+    return " ".join(text.split()).strip()
 
 def normalize_location(loc):
-    if not loc or loc.lower() in ["deutschland", "germany", "remote", "nationwide", "home office", "homeoffice"]:
+    if not loc or loc.lower() in ["deutschland", "germany", "remote", "nationwide", "home office", "homeoffice", "unknown"]:
         return "Remote/Deutschland"
     
     # Если формат "City, State", берем City
@@ -44,7 +47,9 @@ def normalize_location(loc):
         'zürich': 'Zürich',
         'zurich': 'Zürich',
         'wien': 'Wien',
-        'vienna': 'Wien'
+        'vienna': 'Wien',
+        'berlin': 'Berlin',
+        'hamburg': 'Hamburg'
     }
     
     loc_clean = loc.lower().strip()
@@ -58,11 +63,16 @@ def normalize_location(loc):
 def get_job_signature(title, company, location):
     """
     Создает уникальный хеш на основе названия вакансии, компании и города.
-    Это помогает найти одну и ту же вакансию на разных сайтах.
     """
     t = clean_text(title)
+    
+    # Если компания Unknown, игнорируем её в хеше, чтобы склеить с нормальной записью
     c = clean_text(company)
-    l = clean_text(location)
+    if not c or c in ["unknown", "rheine"]: # "rheine" sometimes appears as parsed error
+        c = "any"
+        
+    # Для локации используем нормализатор
+    l = clean_text(normalize_location(location))
     
     # Создаем строку-сигнатуру
     sig_string = f"{t}|{c}|{l}"
