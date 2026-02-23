@@ -9,9 +9,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 class DescriptionManager:
     def __init__(self, db_path="data/jobs_database.sqlite"):
         self.db_path = db_path
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        ]
+
+    def get_headers(self, url=None):
+        ua = random.choice(self.user_agents)
+        headers = {
+            "User-Agent": ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1"
         }
+        return headers
 
     def get_pending_vacancies(self, limit=100):
         # Ищем вакансии, где описание слишком короткое (< 600 символов) 
@@ -91,11 +110,24 @@ class DescriptionManager:
 
     def scrape_adzuna_redirect(self, url):
         try:
-            res = requests.get(url, headers=self.headers, timeout=10, allow_redirects=True)
+            # Используем сессию
+            session = requests.Session()
+            res = session.get(url, headers=self.get_headers(url), timeout=15, allow_redirects=True)
+            
+            # Если словили 403, пробуем еще разок через паузу
+            if res.status_code == 403:
+                time.sleep(2)
+                res = session.get(url, headers=self.get_headers(url), timeout=15, allow_redirects=True)
+
             if res.status_code == 403:
                 return res.url, "ERR_403"
             if res.status_code == 404:
                 return res.url, "ERR_404"
+            
+            # Проверка на капчу в тексте
+            if "captcha" in res.text.lower() or "blocked" in res.text.lower():
+                return res.url, "ERR_403"
+                
             return res.url, res.text
         except:
             return url, None
@@ -155,6 +187,8 @@ class DescriptionManager:
     def _process_one(self, row):
         sig, url, source, title = row
         try:
+            # Рандомная пауза перед запросом, чтобы не "долбить" сервер
+            time.sleep(random.uniform(0.5, 2.5))
             final_url, html = self.scrape_adzuna_redirect(url)
             
             if html == "ERR_403": return "403_forbidden"
@@ -181,6 +215,9 @@ class DescriptionManager:
                         data = {"description": desc, "salary_min": None, "salary_max": None}
             
             if not data or not data.get('description'):
+                # Добавим в лог домен, который не смогли распарсить (информативно)
+                domain = final_url.split('/')[2] if '//' in final_url else final_url
+                # return f"parsing_failed_{domain}" 
                 return "parsing_failed"
                 
             if len(data['description']) < 500:

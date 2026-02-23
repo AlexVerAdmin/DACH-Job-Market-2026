@@ -105,7 +105,8 @@ class Pipeline:
             desc_manager = DescriptionManager(db_path=self.db.db_path)
             # Process up to 5000 descriptions in one run (free, just takes time)
             limit = 20 if self.is_test else 5000
-            desc_manager.run_parallel(limit=limit, max_workers=10)
+            # Reduced workers to 5 to avoid 403 blocks from sites like StepStone
+            desc_manager.run_parallel(limit=limit, max_workers=5)
 
         # 4. Translation (DeepL)
         if translate:
