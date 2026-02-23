@@ -28,6 +28,8 @@ def load_config():
             "priority": config.getint('Scraping', 'pages_priority'),
             "aggregator": config.getint('Scraping', 'pages_aggregator')
         },
+        "ENRICHMENT_LIMIT": config.getint('Scraping', 'enrichment_limit', fallback=1000),
+        "TRANSLATION_LIMIT": config.getint('Scraping', 'translation_limit', fallback=500),
         "STRICT_MATCHING": config.getboolean('Scraping', 'strict_matching', fallback=False),
         "EXCLUDE_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'exclude_keywords', fallback='').split(',') if k.strip()],
         "RELEVANT_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'relevant_keywords', fallback='').split(',') if k.strip()],
@@ -101,21 +103,19 @@ class Pipeline:
 
         # 3. Description Enrichment (Critical for skill analysis)
         if enrich:
-            print("\n[ENRICHMENT] Scraping full descriptions...")
+            print(f"\n[ENRICHMENT] Scraping full descriptions (Limit: {CONFIG['ENRICHMENT_LIMIT']})...")
             desc_manager = DescriptionManager(db_path=self.db.db_path)
-            # Process up to 5000 descriptions in one run (free, just takes time)
-            limit = 20 if self.is_test else 5000
+            # Use limit from settings.ini
+            limit = 20 if self.is_test else CONFIG["ENRICHMENT_LIMIT"]
             # Reduced workers to 5 to avoid 403 blocks from sites like StepStone
             desc_manager.run_parallel(limit=limit, max_workers=5)
 
-        # 4. Translation (DeepL)
         if translate:
             from translator import JobTranslator
-            print("\n[TRANSLATION] Translating job titles...")
+            print(f"\n[TRANSLATION] Translating job titles (Limit: {CONFIG['TRANSLATION_LIMIT']})...")
             translator = JobTranslator(db_path=self.db.db_path)
-            # Translate more titles per session. 
-            # Note: Internal check for SESSION_LIMIT (chars) exists.
-            limit = 10 if self.is_test else 1000
+            # Use limit from settings.ini
+            limit = 10 if self.is_test else CONFIG["TRANSLATION_LIMIT"]
             translator.translate_titles(limit=limit)
 
         # 5. Skill Extraction based on full descriptions
