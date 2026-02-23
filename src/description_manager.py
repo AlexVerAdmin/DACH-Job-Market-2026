@@ -20,7 +20,8 @@ class DescriptionManager:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT signature, url, source, title FROM vacancies 
-            WHERE length(description) < 600 OR description = title
+            WHERE (length(description) < 600 OR description = title)
+            AND is_active = 1
             ORDER BY last_seen DESC
             LIMIT ?
         ''', (limit,))
@@ -91,6 +92,10 @@ class DescriptionManager:
     def scrape_adzuna_redirect(self, url):
         try:
             res = requests.get(url, headers=self.headers, timeout=10, allow_redirects=True)
+            if res.status_code == 403:
+                return res.url, "ERR_403"
+            if res.status_code == 404:
+                return res.url, "ERR_404"
             return res.url, res.text
         except:
             return url, None
@@ -151,8 +156,10 @@ class DescriptionManager:
         sig, url, source, title = row
         try:
             final_url, html = self.scrape_adzuna_redirect(url)
-            if not html: 
-                return False
+            
+            if html == "ERR_403": return "403_forbidden"
+            if html == "ERR_404": return "404_not_found"
+            if not html: return "connection_error"
             
             data = None
             if 'stepstone.de' in final_url:
@@ -173,32 +180,59 @@ class DescriptionManager:
                     if desc:
                         data = {"description": desc, "salary_min": None, "salary_max": None}
             
-            if data and data.get('description') and len(data['description']) > 500:
-                return self.update_vacancy_fields(sig, data)
-        except:
-            pass
-        return False
+            if not data or not data.get('description'):
+                return "parsing_failed"
+                
+            if len(data['description']) < 500:
+                return "too_short"
+
+            if self.update_vacancy_fields(sig, data):
+                return "ok"
+            
+            return "ok_no_change" # Описание уже было длинным
+        except Exception as e:
+            return f"error_{type(e).__name__}"
 
     def run_parallel(self, limit=50, max_workers=5):
         pending = self.get_pending_vacancies(limit)
-        print(f"[Desc] Найдено {len(pending)} вакансий. Запуск в {max_workers} потоках...")
+        total_pending = len(pending)
+        print(f"[Desc] Обработка {total_pending} вакансий в {max_workers} потоках...")
         
-        success_count = 0
+        stats = {
+            "ok": 0, "ok_no_change": 0, "403_forbidden": 0, "404_not_found": 0, 
+            "parsing_failed": 0, "too_short": 0, "connection_error": 0
+        }
+        
         last_reported = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_url = {executor.submit(self._process_one, row): row for row in pending}
             for future in as_completed(future_to_url):
-                if future.result():
-                    success_count += 1
+                res = future.result()
+                if res in stats:
+                    stats[res] += 1
+                elif str(res).startswith("error"):
+                    stats["error"] = stats.get("error", 0) + 1
+                else:
+                    stats["other"] = stats.get("other", 0) + 1
                 
-                # Печатаем прогресс только когда перешагнули порог в 10 новых и еще не сообщали об этом
-                current_milestone = (success_count // 10) * 10
+                # Печатаем прогресс каждые 50 штук
+                processed = sum(stats.values())
+                current_milestone = (processed // 50) * 50
                 if current_milestone > last_reported:
-                    print(f"  [Progress] Обновлено: {current_milestone}...")
+                    print(f"  [Progress] Обработано: {processed}/{total_pending}...")
                     last_reported = current_milestone
         
-        print(f"[Desc] Завершено. Обновлено описаний: {success_count}")
-        return success_count
+        print("\n[Desc] Завершено. Результаты:")
+        print(f"  [+] Успешно обновлено: {stats['ok']}")
+        if stats['ok_no_change'] > 0: print(f"  [~] Уже актуально: {stats['ok_no_change']}")
+        if stats['403_forbidden'] > 0: print(f"  [!] Заблокировано (403): {stats['403_forbidden']}")
+        if stats['404_not_found'] > 0: print(f"  [!] Не найдено (404): {stats['404_not_found']}")
+        if stats['too_short'] > 0: print(f"  [-] Слишком короткие: {stats['too_short']}")
+        if stats['parsing_failed'] > 0: print(f"  [-] Не удалось извлечь: {stats['parsing_failed']}")
+        if stats['connection_error'] > 0: print(f"  [?] Ошибка сети: {stats['connection_error']}")
+        if stats.get('error', 0) > 0: print(f"  [!] Ошибок скрипта: {stats['error']}")
+        
+        return stats['ok']
 
 if __name__ == "__main__":
     manager = DescriptionManager()

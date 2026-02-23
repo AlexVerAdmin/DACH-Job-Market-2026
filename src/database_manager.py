@@ -33,7 +33,8 @@ class DatabaseManager:
                     last_seen TEXT,
                     source TEXT,
                     translated_title TEXT,
-                    extracted_skills TEXT
+                    extracted_skills TEXT,
+                    is_active INTEGER DEFAULT 1
                 )
             ''')
             
@@ -44,6 +45,8 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE vacancies ADD COLUMN translated_title TEXT")
             if 'extracted_skills' not in columns:
                 cursor.execute("ALTER TABLE vacancies ADD COLUMN extracted_skills TEXT")
+            if 'is_active' not in columns:
+                cursor.execute("ALTER TABLE vacancies ADD COLUMN is_active INTEGER DEFAULT 1")
             
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS salary_history (
@@ -86,6 +89,7 @@ class DatabaseManager:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(signature) DO UPDATE SET 
                             last_seen = excluded.last_seen,
+                            is_active = 1,
                             url = COALESCE(excluded.url, vacancies.url),
                             salary_min = CASE 
                                 WHEN excluded.salary_min IS NOT NULL AND (vacancies.salary_min IS NULL OR excluded.source != 'adzuna' OR vacancies.source = 'adzuna') 
@@ -136,6 +140,22 @@ class DatabaseManager:
             conn.commit()
             
         return new_count
+
+    def mark_stale_vacancies(self, threshold_days=7):
+        """Marks active vacancies as inactive if they haven't been seen for X days."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE vacancies 
+                SET is_active = 0 
+                WHERE is_active = 1 
+                AND (julianday('now') - julianday(last_seen)) > ?
+            ''', (threshold_days,))
+            count = cursor.rowcount
+            conn.commit()
+        if count > 0:
+            print(f"  [DB] {count} вакансий помечены как закрытые (не актуальны более {threshold_days} дн.)")
+        return count
 
     def get_all_vacancies(self):
         import pandas as pd

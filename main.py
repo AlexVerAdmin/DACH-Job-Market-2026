@@ -93,6 +93,11 @@ class Pipeline:
                         self._process_scraper("adzuna", role, role, "General", country, is_aggregator=True, auto_level=True)
             
             print(f"\n[SCRAPING] Finished! Total new vacancies added: {self.total_added}")
+            
+            # Post-scrape cleanup: Mark old vacancies as closed
+            closed_count = self.db.mark_stale_vacancies(threshold_days=7)
+            if closed_count > 0:
+                print(f"[SCRAPING] Marked {closed_count} vacancies as closed/inactive.")
 
         # 3. Description Enrichment (Critical for skill analysis)
         if enrich:
