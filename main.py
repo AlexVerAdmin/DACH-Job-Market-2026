@@ -30,7 +30,11 @@ def load_config():
         },
         "STRICT_MATCHING": config.getboolean('Scraping', 'strict_matching', fallback=False),
         "EXCLUDE_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'exclude_keywords', fallback='').split(',') if k.strip()],
-        "RELEVANT_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'relevant_keywords', fallback='').split(',') if k.strip()]
+        "RELEVANT_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'relevant_keywords', fallback='').split(',') if k.strip()],
+        "DEEPL": {
+            "session_limit": config.getint('DeepL', 'session_limit', fallback=5000),
+            "target_language": config.get('DeepL', 'target_language', fallback='RU')
+        }
     }
 
 # Load settings from INI
@@ -46,6 +50,7 @@ class Pipeline:
             "aa": ArbeitsagenturScraper()
         }
         self.is_test = is_test
+        self.total_added = 0
         if is_test:
             CONFIG["ROLES"] = ["Data Analyst"]
             CONFIG["LEVELS"] = {"Junior": ["Junior"], "General": [""]}
@@ -86,13 +91,15 @@ class Pipeline:
                     for country in CONFIG["COUNTRIES"]:
                         print(f"\n  [ADZUNA] Fetching broad results for '{role}' ({country.upper()})...")
                         self._process_scraper("adzuna", role, role, "General", country, is_aggregator=True, auto_level=True)
+            
+            print(f"\n[SCRAPING] Finished! Total new vacancies added: {self.total_added}")
 
         # 3. Description Enrichment (Critical for skill analysis)
         if enrich:
             print("\n[ENRICHMENT] Scraping full descriptions...")
             desc_manager = DescriptionManager(db_path=self.db.db_path)
-            # Fetch pending descriptions
-            limit = 20 if self.is_test else 1000
+            # Process up to 5000 descriptions in one run (free, just takes time)
+            limit = 20 if self.is_test else 5000
             desc_manager.run_parallel(limit=limit, max_workers=10)
 
         # 4. Translation (DeepL)
@@ -100,7 +107,9 @@ class Pipeline:
             from translator import JobTranslator
             print("\n[TRANSLATION] Translating job titles...")
             translator = JobTranslator(db_path=self.db.db_path)
-            limit = 10 if self.is_test else 100
+            # Translate more titles per session. 
+            # Note: Internal check for SESSION_LIMIT (chars) exists.
+            limit = 10 if self.is_test else 1000
             translator.translate_titles(limit=limit)
 
         # 5. Skill Extraction based on full descriptions
@@ -171,6 +180,7 @@ class Pipeline:
             
             added = self.db.save_vacancies(valid_jobs)
             if added > 0:
+                self.total_added += added
                 print(f"    [+] Added {added} new vacancies (filtered from {len(jobs)})")
         except Exception as e:
             print(f"    [!] Error in {name}: {e}")
@@ -252,8 +262,11 @@ if __name__ == "__main__":
     elif args.scrape or args.enrich or args.skills or args.translate:
         # Run specific components
         pipeline.run(scrape=args.scrape, enrich=args.enrich, skills=args.skills, translate=args.translate, source=args.source)
+    elif args.reset:
+        # If ONLY reset was passed, we've already done it above
+        print("[!] Database reset complete. No further actions requested.")
     else:
-        # Default full run
+        # Default full run (only if NO specific flags were passed)
         pipeline.run(source=args.source)
 
     # Final quota usage report

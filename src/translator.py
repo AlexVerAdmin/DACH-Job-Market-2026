@@ -2,6 +2,8 @@ import os
 import requests
 import sqlite3
 import re
+import time
+import configparser
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +15,17 @@ class JobTranslator:
         self.url = "https://api-free.deepl.com/v2/translate" # Use "https://api.deepl.com/v2/translate" for Pro
         self.usage_url = "https://api-free.deepl.com/v2/usage"
         self.chars_translated = 0
-        self.SESSION_LIMIT = int(os.getenv("DEEPL_SESSION_LIMIT", 15000))
+        
+        # Priority: Absolutely positioned settings.ini -> .env -> default 5000
+        config = configparser.ConfigParser()
+        # Find settings.ini in the root (one level up from src/)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(base_dir, 'settings.ini')
+        config.read(config_path, encoding='utf-8')
+        
+        self.SESSION_LIMIT = config.getint('DeepL', 'session_limit', 
+                                          fallback=int(os.getenv("DEEPL_SESSION_LIMIT", 5000)))
+        print(f"  [Translator] Session limit loaded: {self.SESSION_LIMIT} characters.")
 
     def clean_title(self, title):
         """Removes gender suffixes and remote noise to improve grouping."""
@@ -88,6 +100,7 @@ class JobTranslator:
         print(f"[Translator] Starting session (Limit: {self.SESSION_LIMIT} chars per run)...")
 
         processed_count = 0
+        consecutive_errors = 0
         for cleaned_title, signatures in groups.items():
             # Check session limit
             title_len = len(cleaned_title)
@@ -97,6 +110,7 @@ class JobTranslator:
 
             translated = self._call_deepl(cleaned_title, target_lang)
             if translated:
+                consecutive_errors = 0
                 self.chars_translated += title_len
                 # Update all vacancies that share this cleaned title
                 placeholders = ', '.join(['?'] * len(signatures))
@@ -106,9 +120,14 @@ class JobTranslator:
                 )
                 processed_count += len(signatures)
                 print(f"  [+] ({self.chars_translated}/{self.SESSION_LIMIT}) {cleaned_title} -> {translated} ({len(signatures)} vacancies)")
+            else:
+                consecutive_errors += 1
+                if consecutive_errors >= 3:
+                    print("[Translator] Too many consecutive errors. Stopping session for safety.")
+                    break
             
-            # Optional break based on number of unique titles processed if needed, 
-            # but SESSION_LIMIT is the primary constraint.
+            # Add a tiny delay to prevent HTTP 429 (Rate Limit)
+            time.sleep(0.3)
 
         conn.commit()
         conn.close()

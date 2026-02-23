@@ -32,15 +32,18 @@ class DatabaseManager:
                     first_seen TEXT,
                     last_seen TEXT,
                     source TEXT,
-                    translated_title TEXT
+                    translated_title TEXT,
+                    extracted_skills TEXT
                 )
             ''')
             
-            # Check if translated_title column exists (for existing DBs)
+            # Migration check for existing columns
             cursor.execute("PRAGMA table_info(vacancies)")
             columns = [info[1] for info in cursor.fetchall()]
             if 'translated_title' not in columns:
                 cursor.execute("ALTER TABLE vacancies ADD COLUMN translated_title TEXT")
+            if 'extracted_skills' not in columns:
+                cursor.execute("ALTER TABLE vacancies ADD COLUMN extracted_skills TEXT")
             
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS salary_history (
