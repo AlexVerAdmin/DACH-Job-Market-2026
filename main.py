@@ -29,6 +29,7 @@ def load_config():
             "aggregator": config.getint('Scraping', 'pages_aggregator')
         },
         "ENRICHMENT_LIMIT": config.getint('Scraping', 'enrichment_limit', fallback=1000),
+        "ENRICHMENT_WORKERS": config.getint('Scraping', 'enrichment_workers', fallback=5),
         "TRANSLATION_LIMIT": config.getint('Scraping', 'translation_limit', fallback=500),
         "STRICT_MATCHING": config.getboolean('Scraping', 'strict_matching', fallback=False),
         "EXCLUDE_KEYWORDS": [k.strip().lower() for k in config.get('Scraping', 'exclude_keywords', fallback='').split(',') if k.strip()],
@@ -107,8 +108,8 @@ class Pipeline:
             desc_manager = DescriptionManager(db_path=self.db.db_path)
             # Use limit from settings.ini
             limit = 20 if self.is_test else CONFIG["ENRICHMENT_LIMIT"]
-            # Reduced workers to 5 to avoid 403 blocks from sites like StepStone
-            desc_manager.run_parallel(limit=limit, max_workers=5)
+            # Workers count from settings.ini
+            desc_manager.run_parallel(limit=limit, max_workers=CONFIG["ENRICHMENT_WORKERS"])
 
         if translate:
             from translator import JobTranslator
