@@ -104,12 +104,12 @@ class Pipeline:
 
         # 3. Description Enrichment (Critical for skill analysis)
         if enrich:
-            print(f"\n[ENRICHMENT] Scraping full descriptions (Limit: {CONFIG['ENRICHMENT_LIMIT']})...")
+            print(f"\n[ENRICHMENT] Scraping full descriptions (Limit: {CONFIG['ENRICHMENT_LIMIT']}, Source: {source if source else 'All'})...")
             desc_manager = DescriptionManager(db_path=self.db.db_path)
             # Use limit from settings.ini
             limit = 20 if self.is_test else CONFIG["ENRICHMENT_LIMIT"]
             # Workers count from settings.ini
-            desc_manager.run_parallel(limit=limit, max_workers=CONFIG["ENRICHMENT_WORKERS"])
+            desc_manager.run_parallel(limit=limit, max_workers=CONFIG["ENRICHMENT_WORKERS"], source=source)
 
         if translate:
             from translator import JobTranslator
